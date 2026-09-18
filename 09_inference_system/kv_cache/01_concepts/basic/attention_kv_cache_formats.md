@@ -94,7 +94,7 @@ MQA 的 KV Cache 极小，但代价是注意力质量下降——只有一组 K/
 
 DeepSeek V2/V3 提出的 MLA 彻底改变了 KV Cache 的物理形态。传统注意力下 K 和 V 是直接存储的——形状是 `(num_kv_heads, head_dim)`。MLA 的核心思路是：**不存完整的 K 和 V，只存一个压缩后的 latent vector，注意力和生成时再实时解压。**
 
-````text
+```text
 DeepSeek-V3（MLA）：
   d_model = 7168
   num_q_heads = 128
@@ -112,7 +112,7 @@ MLA 实际存储（两部分）：
   KV latent (K/V 共享压缩向量): (512,) = 512 fp16   = 1 KB
   Decoupled K (RoPE 位置编码): (64,) = 64 fp16 = 128 B  ← 共享于所有 head，RoPE 只需一份
   合计：~1.13 KB / token / layer   ← 约为传统 MHA 的 1/57
-
+```
 > DeepSeek 发现位置信息只需一个共享的 RoPE key 即可编码——内容部分 (k^C) 通过低秩分解承载 per-head 语义，位置部分 (k^R) 是所有 head 共用的一维信号。因此 decoupled RoPE K 不乘 head 数，仅为 `qk_rope_head_dim = 64` 维。
 
 MLA 的压缩效果来自两个机制：(1) K 和 V 共享一个下投影矩阵 `W^{DKV}`，将 128 head × 128 dim 的高维空间压缩到 `kv_lora_rank = 512` 维；(2) 位置编码（RoPE）因旋转操作无法直接压缩，从 latent 中解耦后单独存储——但因为所有 head 共享同一个 RoPE key，仅需 64 维而非 128×64 维。实际 attention 计算时，latent 通过 `W^{UK}` 和 `W^{UV}` 实时还原 per-head K 和 V，RoPE key 广播到所有 head。
@@ -142,7 +142,7 @@ c4a 压缩后（每 8 个 token → 1 个压缩 token，步长 4，有重叠）:
 c128a 压缩后（每 128 个 token → 1 个压缩 token，无重叠）:
   [t0-t127]  [t128-t255]  [t256-t383] ...
   每个压缩 token 存一份 KV → KV 数量 ≈ 原始的 1/128
-````
+```
 
 压缩 token 的值是原始 token K/V 的加权和——不是简单平均，而是可学习的投影权重。注意力计算时，Q 直接与压缩后的 K 做点积，跳过了逐 token 展开的步骤。
 
